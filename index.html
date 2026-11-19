@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CBG Truck Tracker</title>
+<link rel="icon" type="image/webp" href="logo.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img class="logo-img" src="logo.webp" alt="Carib Brewery" width="40" height="26"><span class="place">GRENADA</span><span class="sep"></span><span class="title">Truck Tracker</span></div>
+  <div class="top-actions">
+    <span id="syncBadge" class="badge"></span>
+    <button class="btn ghost" id="btnRefresh" type="button" title="Get the latest trips from every device">Refresh</button>
+    <button class="btn dark" id="btnExport" type="button">Generate Excel</button>
+  </div>
+</header>
+
+<section class="band">
+  <div class="crumbs">Start › Supply chain › Plant to Frequente truck trips</div>
+  <div class="band-row">
+    <h1 id="pageTitle">Log a trip</h1>
+    <div class="route"><span id="routeFrom"></span> → <span id="routeTo"></span></div>
+  </div>
+  <nav class="tabs">
+    <a href="#log" data-view="log" class="tab">Log a trip</a>
+    <a href="#dashboard" data-view="dashboard" class="tab">Dashboard</a>
+    <a href="#trips" data-view="trips" class="tab locked">All trips</a>
+    <a href="#settings" data-view="settings" class="tab locked">Settings</a>
+  </nav>
+</section>
+
+<main>
+  <!-- LOG A TRIP -->
+  <section id="view-log" class="view">
+    <div class="grid-2">
+      <form id="tripForm" class="card form" autocomplete="off" novalidate>
+        <div class="card-head">
+          <h2 id="formTitle">New trip</h2>
+          <span class="slot-pill" id="slotPreview"></span>
+        </div>
+        <input type="hidden" id="f_id">
+        <div class="row two">
+          <label>Date<input type="date" id="f_date" required></label>
+          <label>Time leaving plant<input type="time" id="f_left" required></label>
+        </div>
+        <div class="row two">
+          <label><span>Time back at plant <span class="opt">(optional)</span></span><input type="time" id="f_back"></label>
+          <div class="hint-box">Leave this empty when the truck leaves. Add the return time under <b>Trucks still out</b> when it gets back.</div>
+        </div>
+        <div class="row two">
+          <label>Truck<select id="f_truck" required></select></label>
+          <label>Operator name<input type="text" id="f_operator" list="operatorList" placeholder="Full name" required></label>
+          <datalist id="operatorList"></datalist>
+        </div>
+        <div class="err" id="formErr" role="alert"></div>
+        <div class="form-actions">
+          <button type="submit" class="btn dark big" id="btnSave">Save trip</button>
+          <button type="button" class="btn ghost" id="btnCancelEdit" hidden>Cancel edit</button>
+        </div>
+      </form>
+
+      <div class="side">
+        <div class="card">
+          <div class="card-head"><h2>Trucks still out</h2><span class="muted" id="outCount"></span></div>
+          <div id="outList" class="list"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Today so far</h2><span class="muted" id="todayLabel"></span></div>
+          <div id="todaySlots" class="mini-slots"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Today's trips</h2></div>
+          <div id="todayList" class="list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD -->
+  <section id="view-dashboard" class="view" hidden>
+    <div class="filters card">
+      <label>Period
+        <select id="d_period">
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="week" selected>This week</option>
+          <option value="month">This month</option>
+          <option value="all">All trips</option>
+          <option value="custom">Custom dates</option>
+        </select>
+      </label>
+      <label class="custom">From<input type="date" id="d_from"></label>
+      <label class="custom">To<input type="date" id="d_to"></label>
+      <label>Time slot<select id="d_slot"><option value="">All time slots</option></select></label>
+      <label>Truck<select id="d_truck"><option value="">All trucks</option></select></label>
+      <label>Operator<select id="d_operator"><option value="">All operators</option></select></label>
+      <span class="muted range" id="d_rangeText"></span>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+    <div class="tiles slots" id="slotTiles"></div>
+
+    <div class="grid-2 charts">
+      <div class="card">
+        <div class="card-head"><h2>Trips per day by time slot</h2></div>
+        <div class="legend" id="dayLegend"></div>
+        <div class="chart-box"><canvas id="chartDays"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Trips by hour leaving the plant</h2></div>
+        <div class="chart-box"><canvas id="chartHours"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid-2 even">
+      <div class="card">
+        <div class="card-head"><h2>By operator</h2></div>
+        <div class="table-wrap"><table id="opTable"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>By truck</h2></div>
+        <div class="table-wrap"><table id="truckTable"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOCK SCREEN for All trips and Settings -->
+  <section id="view-lock" class="view" hidden>
+    <form class="card lock-card" id="lockForm" autocomplete="off">
+      <div class="lock-icon" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      </div>
+      <h2 id="lockTitle">Admin code needed</h2>
+      <p class="muted">Only supervisors can view, edit or delete saved trips, download the Excel file and change settings.</p>
+      <label>Admin code<input type="password" id="lockCode" inputmode="text" autocomplete="off" placeholder="Enter the code"></label>
+      <div class="err" id="lockErr" role="alert"></div>
+      <button class="btn dark big" type="submit" id="btnUnlock">Unlock</button>
+    </form>
+  </section>
+
+  <!-- ALL TRIPS -->
+  <section id="view-trips" class="view" hidden>
+    <div class="card">
+      <div class="card-head">
+        <h2>All trips</h2>
+        <div class="head-tools">
+          <input type="search" id="t_search" placeholder="Search operator, truck or trip ID">
+          <button class="btn ghost small" type="button" data-lock>Lock</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table id="tripTable"></table></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" class="view" hidden>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h2>Trip data</h2><button class="btn ghost small" type="button" data-lock>Lock</button></div>
+        <p class="muted">Every device that opens this page sends its trips to the shared Google Sheet, and the dashboard shows trips from all of them. If the signal drops, trips wait on the device and send when it's back.</p>
+        <p id="s_count"></p>
+        <p class="muted">Use <em>Generate Excel</em> at the top of the page to download every trip as a spreadsheet.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>
